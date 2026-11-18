@@ -1,0 +1,24 @@
+{
+  "name": "unisphere-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "UniSphere API: Express, SQLite (node:sqlite) and Socket.IO",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --watch src/index.js",
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "seed": "node --env-file-if-exists=.env src/seed.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.5.0",
+    "nodemailer": "^7.0.13",
+    "pdfkit": "^0.17.2",
+    "socket.io": "^4.8.1"
+  }
+}
