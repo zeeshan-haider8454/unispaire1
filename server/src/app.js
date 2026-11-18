@@ -6,6 +6,7 @@ import authRoutes from './routes/auth.js';
 import societyRoutes from './routes/societies.js';
 import eventRoutes from './routes/events.js';
 import meetingRoutes from './routes/meetings.js';
+import megaRoutes from './routes/megaEvents.js';
 import adminRoutes from './routes/admin.js';
 import notificationRoutes from './routes/notifications.js';
 import { AppError } from './lib/errors.js';
@@ -23,6 +24,7 @@ export function createApp() {
   app.get('/api/docs', (req, res) => res.type('html').send(swaggerPage));
   app.use('/api/auth', authRoutes);
   app.use('/api/societies', societyRoutes);
+  app.use('/api', megaRoutes); // Task 2: mega events, sub-events, supervisors and sub-event tasks (mounted before Task 1 routes)
   app.use('/api', meetingRoutes); // meetings and meeting invitations
   app.use('/api', eventRoutes); // events, registrations, invitations, tasks, expenses
   app.use('/api/admin', adminRoutes);

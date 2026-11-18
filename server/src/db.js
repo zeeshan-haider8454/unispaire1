@@ -133,6 +133,39 @@ if (!otpColumns.some((c) => c.name === 'purpose')) {
   db.exec("ALTER TABLE otp_codes ADD COLUMN purpose TEXT NOT NULL DEFAULT 'login'");
 }
 
+// Task 2: Mega Events are internal parent records coordinating several sub-events. They are kept apart from
+// Task 1 events and never appear in the public listing.
+db.exec(`
+CREATE TABLE IF NOT EXISTS mega_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  society_id INTEGER NOT NULL REFERENCES societies(id) ON DELETE CASCADE,
+  president_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  start_date TEXT NOT NULL,
+  end_date TEXT NOT NULL,
+  overall_budget REAL NOT NULL CHECK (overall_budget >= 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sub_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  mega_event_id INTEGER NOT NULL REFERENCES mega_events(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  venue TEXT NOT NULL,
+  event_date TEXT NOT NULL,
+  start_at TEXT NOT NULL,
+  end_at TEXT NOT NULL,
+  supervisor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  allocated_budget REAL,
+  warned_80 INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`);
+
 // Meetings: society meetings with invited members. Created here so existing databases get them too.
 db.exec(`
 CREATE TABLE IF NOT EXISTS meetings (
@@ -187,6 +220,11 @@ if (taskSchema && !taskSchema.sql.includes("'urgent'")) {
     throw err;
   }
 }
+
+// Migration: societies can have a logo (stored under server/uploads/logos).
+const societyCols = db.prepare('PRAGMA table_info(societies)').all().map((c) => c.name);
+if (!societyCols.includes('logo_file')) db.exec('ALTER TABLE societies ADD COLUMN logo_file TEXT');
+if (!societyCols.includes('logo_mime')) db.exec('ALTER TABLE societies ADD COLUMN logo_mime TEXT');
 
 // Migration: expenses are grouped by category and can name a vendor.
 const expenseCols = db.prepare('PRAGMA table_info(expenses)').all().map((c) => c.name);
@@ -262,6 +300,75 @@ if (societySchema && /owner_id INTEGER NOT NULL UNIQUE/.test(societySchema.sql))
     throw err;
   } finally {
     db.exec('PRAGMA foreign_keys = ON;');
+  }
+}
+
+// Task 2 migration: tasks and expenses can belong to a sub-event instead of a Task 1 event.
+// event_id becomes optional; one of event_id or sub_event_id must be set. Existing rows keep their event.
+const taskTable = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tasks'").get();
+if (taskTable && !taskTable.sql.includes('sub_event_id')) {
+  db.exec('BEGIN');
+  try {
+    db.exec(`
+      CREATE TABLE tasks_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+        sub_event_id INTEGER REFERENCES sub_events(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
+        due_at TEXT,
+        status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'in_progress', 'completed')),
+        assignee_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK (event_id IS NOT NULL OR sub_event_id IS NOT NULL)
+      );
+      INSERT INTO tasks_new (id, event_id, sub_event_id, title, description, priority, due_at, status, assignee_id, created_at, updated_at)
+        SELECT id, event_id, NULL, title, description, priority, due_at, status, assignee_id, created_at, updated_at FROM tasks;
+      DROP TABLE tasks;
+      ALTER TABLE tasks_new RENAME TO tasks;
+    `);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+const expenseTable = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'expenses'").get();
+if (expenseTable && !expenseTable.sql.includes('sub_event_id')) {
+  db.exec('BEGIN');
+  try {
+    db.exec(`
+      CREATE TABLE expenses_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+        sub_event_id INTEGER REFERENCES sub_events(id) ON DELETE CASCADE,
+        description TEXT NOT NULL,
+        amount REAL NOT NULL CHECK (amount > 0),
+        spent_on TEXT NOT NULL,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        receipt_file TEXT,
+        receipt_name TEXT,
+        receipt_mime TEXT,
+        category TEXT NOT NULL DEFAULT 'Other',
+        vendor TEXT NOT NULL DEFAULT '',
+        CHECK (event_id IS NOT NULL OR sub_event_id IS NOT NULL)
+      );
+      INSERT INTO expenses_new (id, event_id, sub_event_id, description, amount, spent_on, created_by, created_at, updated_at,
+                                receipt_file, receipt_name, receipt_mime, category, vendor)
+        SELECT id, event_id, NULL, description, amount, spent_on, created_by, created_at, updated_at,
+               receipt_file, receipt_name, receipt_mime, category, vendor FROM expenses;
+      DROP TABLE expenses;
+      ALTER TABLE expenses_new RENAME TO expenses;
+    `);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
   }
 }
 

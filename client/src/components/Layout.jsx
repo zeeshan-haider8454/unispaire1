@@ -4,6 +4,7 @@ import { useAuth } from '../auth.jsx';
 import { api } from '../api.js';
 import { getSocket } from '../socket.js';
 import { formatPKT } from '../format.js';
+import Icon from './Icon.jsx';
 
 function NotificationBell() {
   const [open, setOpen] = useState(false);
@@ -57,7 +58,7 @@ function NotificationBell() {
   return (
     <div className="bell">
       <button className="btn btn-ghost" onClick={() => setOpen((o) => !o)} aria-label="Notifications">
-        Notifications {unread > 0 && <span className="count">{unread}</span>}
+        <Icon name="bell" size={16} /> Notifications {unread > 0 && <span className="count">{unread}</span>}
       </button>
       {open && (
         <div className="dropdown">
@@ -106,23 +107,24 @@ export default function Layout() {
       <header className="topbar">
         <Link to="/" className="brand">UniSphere</Link>
         <nav className="nav">
-          <NavLink to="/events">Events</NavLink>
+          <NavLink to="/events"><Icon name="calendar" size={16} />Events</NavLink>
           {user?.role === 'student' && (
             <>
-              <NavLink to="/student">My dashboard</NavLink>
-              <NavLink to="/societies">Societies</NavLink>
+              <NavLink to="/student"><Icon name="home" size={16} />My dashboard</NavLink>
+              <NavLink to="/societies"><Icon name="users" size={16} />Societies</NavLink>
             </>
           )}
           {user?.role === 'president' && (
             <>
-              <NavLink to="/president">My society</NavLink>
-              <NavLink to="/president#events">Manage events</NavLink>
+              <NavLink to="/president"><Icon name="building" size={16} />My society</NavLink>
+              {/* Plain link: it points into the society page, so it should not show as a second active tab. */}
+              <Link to="/president#events"><Icon name="layers" size={16} />Manage events</Link>
             </>
           )}
-          {user?.role === 'admin' && <NavLink to="/admin">Administration</NavLink>}
+          {user?.role === 'admin' && <NavLink to="/admin"><Icon name="shield" size={16} />Administration</NavLink>}
           {!user && (
             <>
-              <NavLink to="/login">Log in</NavLink>
+              <NavLink to="/login"><Icon name="user" size={16} />Log in</NavLink>
               <NavLink to="/register" className="btn btn-small">Sign up</NavLink>
             </>
           )}
@@ -131,7 +133,7 @@ export default function Layout() {
           <div className="user-area">
             <NotificationBell />
             <span className="user-name">{user.name}</span>
-            <button className="btn btn-ghost" onClick={logout}>Log out</button>
+            <button className="btn btn-ghost" onClick={logout}><Icon name="logout" size={16} />Log out</button>
           </div>
         )}
       </header>

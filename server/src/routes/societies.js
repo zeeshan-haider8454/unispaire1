@@ -5,13 +5,14 @@ import { requireAuth, requireRole } from '../lib/auth.js';
 import { CATEGORIES, nowIso } from '../lib/domain.js';
 import { EVENT_SELECT, serializeEvent } from '../lib/events.js';
 import { notify, signal } from '../lib/realtime.js';
+import { logoUpload, deleteLogoFile, logoPath } from '../lib/logo.js';
 
 const router = Router();
 const clean = (v) => (typeof v === 'string' ? v.trim() : '');
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const SOCIETY_SELECT = `
-  SELECT s.*, u.name AS president_name,
+  SELECT s.*, (s.logo_file IS NOT NULL) AS has_logo, u.name AS president_name,
     (SELECT COUNT(*) FROM memberships m WHERE m.society_id = s.id AND m.status = 'approved') AS member_count
   FROM societies s JOIN users u ON u.id = s.owner_id`;
 
@@ -74,6 +75,33 @@ router.post('/', requireAuth, requireRole('president'), (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?)`).run(req.user.id, input.name, input.description, input.category,
     input.contact_email, input.contact_phone, nowIso());
   res.status(201).json(loadSociety(info.lastInsertRowid));
+});
+
+// Uploads or replaces the society logo (president, owner only). Old file is removed after the new one is saved.
+router.post('/:id/logo', requireAuth, requireRole('president'), logoUpload, (req, res) => {
+  const society = loadSociety(req.params.id);
+  if (society.owner_id !== req.user.id) {
+    if (req.file) deleteLogoFile(req.file.filename);
+    throw new AppError(403, 'You can manage only your own society.');
+  }
+  if (!req.file) throw new AppError(400, 'Choose a logo image to upload.');
+
+  db.prepare('UPDATE societies SET logo_file = ?, logo_mime = ? WHERE id = ?')
+    .run(req.file.filename, req.file.mimetype, society.id);
+  if (society.logo_file) deleteLogoFile(society.logo_file);
+  signal([society.owner_id], 'societies');
+  res.json({ has_logo: true });
+});
+
+// Serves the logo. Societies are browsed only after login, so the logo requires login too.
+router.get('/:id/logo', requireAuth, (req, res) => {
+  const society = db.prepare('SELECT logo_file, logo_mime FROM societies WHERE id = ?').get(req.params.id);
+  if (!society) throw new AppError(404, 'Society not found.');
+  if (!society.logo_file) throw new AppError(404, 'This society has no logo.');
+  res.type(society.logo_mime);
+  res.sendFile(logoPath(society.logo_file), (err) => {
+    if (err && !res.headersSent) res.status(404).json({ error: 'Logo file is missing.' });
+  });
 });
 
 router.get('/:id', requireAuth, (req, res) => {

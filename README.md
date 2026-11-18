@@ -1,8 +1,10 @@
 # UniSphere
 
-A university society and event management platform. Society presidents run their society, its events, volunteers, tasks and expenses. Students discover societies and events, request membership, register and volunteer. University administrators approve event proposals and budgets and monitor activity.
+A university society and event management platform. Society presidents run their societies, events, volunteers, tasks, budgets and meetings. Students discover societies and events, register, volunteer and supervise activities. University administrators approve event proposals and budgets, create Mega Events and monitor activity across campus.
 
-**Stack:** React (Vite) · Node.js · Express 5 · SQLite (built-in `node:sqlite`) · Socket.IO · JWT · bcrypt
+This repository covers **Task 1** (core platform and bonus features) and **Task 2** (Mega Event Management extension).
+
+**Stack:** React 19 (Vite) · Node.js 22 · Express 5 · SQLite (built-in `node:sqlite`) · Socket.IO · JWT · bcrypt · Nodemailer · PDFKit · Multer
 
 ---
 
@@ -10,128 +12,143 @@ A university society and event management platform. Society presidents run their
 
 **Requirements:** Node.js **22.13 or newer** (uses the built-in `node:sqlite` module). Check with `node -v`.
 
-### 1. Start the API
+### 1. API
 
 ```bash
 cd server
 npm install
-npm run seed     # creates the database and demo data, including the administrator account
-npm run dev      # API on http://localhost:4000
+cp .env.example .env   # then edit the values (see below)
+npm run seed           # creates the database, demo data, the administrator and the Task 2 starter data
+npm run dev            # API on http://localhost:4000
 ```
 
-### 2. Start the React client
+### 2. Client
 
 In a second terminal:
 
 ```bash
 cd client
 npm install
-npm run dev      # app on http://localhost:5173
+npm run dev            # app on http://localhost:5173
 ```
 
-Open **http://localhost:5173**. The Vite dev server proxies `/api` and `/socket.io` to the API.
+The Vite dev server proxies `/api` and `/socket.io` to the API.
 
-### Single-origin run (optional)
+**Single origin (optional):** `cd client && npm run build`, then `cd ../server && npm start` serves the app and API together on http://localhost:4000.
 
-```bash
-cd client && npm run build      # builds client/dist
-cd ../server && npm start       # serves the app and API on http://localhost:4000
-```
-
-### Environment variables (all optional)
+### Environment variables (`server/.env`)
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `PORT` | API port | `4000` |
-| `JWT_SECRET` | Signs session tokens. **Set this for any shared deployment.** | development fallback |
-| `DB_PATH` | SQLite file location | `server/data/unisphere.db` |
+| `JWT_SECRET` | Signs session tokens. **Set a long random value.** | development fallback |
+| `DB_PATH` | SQLite file | `server/data/unisphere.db` |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Email for login and reset codes (Gmail needs an App Password) | Gmail, port 465 |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Administrator created by `npm run seed` | `admin@unisphere.edu` / `Admin@12345` |
-| `DEMO_PASSWORD` | Password for the demo president and students | `Demo@12345` |
+| `DEMO_PASSWORD` | Password for seeded demo users | `Demo@12345` |
+
+`.env` is git-ignored. Never commit real passwords, App Passwords or API keys.
 
 ---
 
-## Test accounts
+## Test accounts (created by `npm run seed`)
 
-Created by `npm run seed`. These are for local demonstration only; change them before any real use.
+Demo values only. Change them before any real use.
 
 | Role | Email | Password |
 | --- | --- | --- |
-| University Administrator | `admin@unisphere.edu` | `Admin@12345` |
-| Society President / Organizer | `president@unisphere.edu` | `Demo@12345` |
+| University Administrator | `admin@unisphere.edu` (or `ADMIN_EMAIL`) | `Admin@12345` (or `ADMIN_PASSWORD`) |
+| Society President (Tech Circle) | `president@unisphere.edu` | `Demo@12345` |
+| Society President (NEXUS, Task 2) | `nexus.president@unisphere.edu` | `Demo@12345` |
 | Student / Volunteer | `ali@unisphere.edu` | `Demo@12345` |
 | Student / Volunteer | `sara@unisphere.edu` | `Demo@12345` |
 | Student / Volunteer | `bilal@unisphere.edu` | `Demo@12345` |
 
-The administrator account is created by the seed script only. Public signup offers only the Student and President roles.
+The administrator is created only by the seed. Public signup offers Student and President roles only.
 
-### Email OTP for local testing
+### Email OTP
 
-Every login attempt and every registration issues a new six-digit code that expires after 10 minutes. No email service is configured, so the code is **printed to the API server console**:
+Every login, registration and password reset sends a new six-digit code **to the email address entered by the user**. The sender is `SMTP_USER`. Codes expire after 10 minutes, allow five wrong attempts, have a 60-second resend cooldown, and a new code invalidates the old one.
 
-```
-[UniSphere OTP] ali@unisphere.edu -> 482913   (valid for 10 minutes)
-```
-
-Enter that code on the verification step. The code is never shown in the web interface and is never a fixed value. A wrong code counts toward five attempts, after which a new code is needed. Resending has a 60-second cooldown, and a new code invalidates the previous one.
-
-Demo walkthrough (about 5 minutes):
-
-1. **Admin:** log in as the administrator, open **Administration**, and approve "Web Development Bootcamp" (a pending proposal).
-2. **Student:** log in as `ali@unisphere.edu`. The dashboard shows an accepted volunteer role and an assigned task. Open **AI Workshop** from the landing page and see seats remaining.
-3. **Registration:** log in as `bilal@unisphere.edu` and register for AI Workshop. Log out, then log in as the president. The president receives a live notification and the seat count updates on any open event page.
-4. **President:** open **Tech Circle → Campus Hackathon 2026**. The task board, budget summary and expense recording are there. Recorded spending is capped at the approved budget.
-5. **New event:** create an event as the president, submit it, and approve it as the administrator.
+If `SMTP_PASS` is empty, codes are printed to the API console instead (`[UniSphere LOGIN OTP] user@example.com -> 123456`). The login screen states which mode the server is in. Demo `@unisphere.edu` addresses cannot receive mail, so with SMTP enabled, register with a real address to test delivery.
 
 ---
 
-## Implemented features
+## Task 1: features
 
 **Authentication and roles**
-- Signup for Student and President, with email and password, then a six-digit email OTP as the second step.
-- OTP rules: 10-minute expiry, five attempts, 60-second resend cooldown, and a new code invalidates the old one.
-- Forgot password: request a six-digit reset code by email (**Forgot password?** on the login page), then enter the code and a new password. The reset code expires in 10 minutes, allows five attempts, and is single-use. The response is the same whether or not the email has an account.
-- Role guards on every API route and every page. The administrator role cannot be chosen at signup.
-- Logged-out visitors who press **Register** on an event page keep their destination through signup, login and OTP, then return to the event.
+- Signup (Student or President), login with password and email OTP, password reset by email OTP.
+- Role guards on every API route and page. Rate limit on auth endpoints: 30 requests per IP per 15 minutes.
+- Logged-out visitors who press Register on a public event keep their destination through signup, login and OTP.
 
 **Societies and membership**
-- A president creates one society (active immediately) with name, description, category from a fixed list, and contact details.
-- Students request to join. Only one pending request per student and society is allowed. Presidents approve, reject or remove members. Rejected or removed students can request again.
-- Each president can manage only their own society and its events.
+- Societies with name, description, fixed category list, contact details and logo (JPG/PNG/WebP up to 2 MB). Active immediately.
+- Membership requests: one pending request per student and society (unique index), approve, reject, remove, request again after rejection or removal. Member / Core Member labels (label only).
+- Public-facing society profile with member count, upcoming events and contact links (login required, per the brief).
 
 **Events**
-- Create, edit and submit events. Validation covers start before end, registration deadline on or before start, capacity of at least 1, and budget of at least 0.
-- Times are entered in **Pakistan Standard Time (Asia/Karachi)** regardless of the browser's timezone. They are stored in UTC and displayed in PKT.
-- Approval status (Draft, Pending, Approved, Rejected, Cancelled) is separate from schedule status (Upcoming, Ongoing, Completed). Schedule status is computed from the current time.
-- Permitted actions follow the Event Status Table. Editing an approved event sends it back for re-approval. Cancellation is irreversible, closes registration, and keeps the registration records as Cancelled.
+- Create, edit, submit and cancel events. Validation: start before end, deadline on or before start, capacity ≥ 1, budget ≥ 0, capacity not below active registrations.
+- Times entered in **Pakistan Standard Time (Asia/Karachi)**, stored in UTC, displayed in PKT.
+- Approval status (Draft, Pending, Approved, Rejected, Cancelled) is separate from schedule status (Upcoming, Ongoing, Completed), which is computed from the clock. Allowed actions follow the Event Status Table.
+- Editing an approved event returns it to Pending; the last approved budget stays in force. Cancellation is irreversible and keeps registrations as Cancelled.
+- Public events page (`/events`), shareable event links and a per-society events link.
 
-**Public event pages and registration**
-- Approved upcoming and ongoing events are public. Completed events stay viewable by direct link with registration closed.
-- Capacity is enforced inside a database transaction, so simultaneous registrations cannot overfill an event. One registration record per student and event. Cancelling releases the seat, and re-registering reuses the record.
-- Capacity cannot be reduced below the number of active registrations.
+**Registration**
+- One registration record per student and event; duplicate active registrations blocked; re-registration reuses the record.
+- Capacity enforced in a database transaction, so simultaneous registrations cannot overfill an event (tested with five students racing for one seat).
 
 **Volunteers and tasks**
-- Presidents invite students to approved events before they start. Declined invitations cannot be re-sent. Responses are final.
-- Kanban task board (To Do, In Progress, Completed) with priority and due date. Tasks can be unassigned. Only students who accepted an invitation can be assigned.
-- Assignees can update their own task status. Event progress is completed tasks divided by total tasks, or 0% if there are none.
+- Invitations for approved events before they start; responses are final; declined students cannot be re-invited.
+- Volunteer withdrawal: unfinished tasks are unassigned, In Progress resets to To Do, completed tasks stay with the volunteer.
+- Kanban board (To Do, In Progress, Completed) with priority (low to urgent), due dates, overdue and unassigned filters. Only accepted volunteers can be assigned. Progress = completed ÷ total (0% with no tasks).
 
-**Budget and expenses**
-- The administrator approves or rejects the event and its proposed budget together. Rejection requires remarks. The administrator cannot change the requested amount.
-- Presidents record, edit and delete expenses. Each expense can have a receipt: a JPG, PNG, WebP or PDF up to 5 MB. Receipts are stored in `server/uploads/receipts` and can be viewed only by the event's president and administrators, through an authenticated request. Total spending cannot exceed the approved budget. When a re-approval sets the budget below recorded spending, the administrator sees a warning, the balance shows **Over budget**, and new expenses are blocked.
-- The approved budget, total spent and remaining balance are calculated automatically.
+**Budgets and expenses**
+- One combined event-and-budget decision by the administrator; rejection requires remarks.
+- Expenses with category, vendor, date and optional receipt (JPG/PNG/WebP/PDF up to 5 MB). Spending may not exceed the approved budget; over-budget events block new expenses.
+- Downloadable **PDF expense report** generated from the database.
+
+**Meetings**
+- Presidents schedule, edit and cancel society meetings and invite approved members. Students accept or decline. Changes and cancellations notify invitees.
 
 **Administration**
-- Dashboard with counts of societies, events, active registrations, pending proposals and approved events.
-- Pending proposal queue with budget details and approve or reject actions.
-- Event monitor with registrations, task progress and budget summaries, filterable by approval status. Societies list.
+- Dashboard statistics and charts, proposal queue, event monitor, societies list, users and roles.
 
-**Notifications and real-time updates**
-- In-app notifications for membership requests and decisions, event submissions and decisions, new registrations, volunteer invitations and responses, task assignments and status changes, and event cancellations (to registered students and invited or accepted volunteers).
-- Socket.IO pushes notifications to the bell without a refresh. Dashboards refetch when relevant data changes. Event pages show seat counts and status live.
+**Notifications and real time**
+- In-app notifications for memberships, submissions and decisions, registrations, invitations, tasks, meetings, cancellations and budget alerts. Read state per notification, All/Unread filter, mark all read.
+- Socket.IO pushes notifications and refreshes dashboards; public event pages show live seat counts.
 
-**Landing page**
-- Introduces UniSphere and its three audiences. Lists the next upcoming approved events automatically (up to six).
+### Changes made at the client's request (differ from the Task 1 brief)
+- A president may own **more than one society** (brief: one).
+- Administrators can **edit users and change roles** (brief: roles are immutable). Safeguards: an admin cannot remove their own admin role and one admin must always remain.
+- Administrators can **approve draft events** and **set a different approved budget** (brief: approve the submitted amount as one decision).
 
-**Not implemented (bonus items):** PDF expense report, society logo upload, Member / Core Member labels, volunteer withdrawal and task reset, meeting management. Cancellation notifications and budget re-approval handling are implemented (see above).
+---
+
+## Task 2: Mega Event Management
+
+A Mega Event is an internal parent record for coordinating several activities (for example NEXUS Tech Fest). It is separate from Task 1 events: it never appears in the public listing or landing page, has no public registration, and does not use event approval or volunteer invitations.
+
+**Administrator (Mega Events panel on the admin dashboard)**
+- Create a Mega Event with title, description, society, start date, end date and overall budget. The society's president is assigned automatically. A society may have several Mega Events.
+- Validation: start date on or before end date; budget ≥ 0. No separate approval.
+- Afterwards only the title and description can change. The administrator sees only Mega Events they created and does not manage sub-events.
+
+**Society President (Mega Events panel → Mega Event page)**
+- Sub-events with title, description, venue, date, start time and end time. The date must fall inside the Mega Event range; start must be before end on the same day; PKT input, UTC storage.
+- One existing Student / Volunteer supervises each sub-event (no new role). Reassigning a supervisor removes the previous supervisor's access immediately.
+- Checklist tasks per sub-event, unassigned or assigned to any registered student (no invitation needed).
+- One-time budget allocation per sub-event; total allocations cannot exceed the overall budget. Expenses (no admin approval) cannot exceed the sub-event allocation. Allocated, spent and remaining are shown.
+- When spending reaches **80%** of a sub-event allocation, the president gets one in-app notification (stored `warned_80` flag; none for a zero allocation).
+
+**Students**
+- **My Supervised Sub-events** on the student dashboard, with a completion percentage per sub-event (0% with no tasks) and status controls for that sub-event's tasks.
+- Supervisors can view and update tasks of their own sub-events only, and cannot create tasks or see budgets and expenses. Other students update only their own tasks. Sub-event tasks also appear in the normal student task list.
+
+All rules are enforced on the API, not just hidden in the interface.
+
+**Starter data:** `npm run seed` creates the NEXUS society, its president, three students (members of NEXUS), and the demo Mega Event *NEXUS Tech Fest 2026* with two sub-events (Gaming Competition, Web Development Workshop), supervisors, checklist tasks and allocations.
+
+**Not implemented:** the optional AI operations report (Task 2 bonus).
 
 ---
 
@@ -139,68 +156,73 @@ Demo walkthrough (about 5 minutes):
 
 | Table | Key columns | Notes |
 | --- | --- | --- |
-| `users` | id, name, email (unique), password_hash, role (`admin`, `president`, `student`) | Administrators can change a user's role from the admin dashboard. Safeguards: an admin cannot remove their own admin role, and at least one administrator must remain. A president who owns a society cannot be demoted until the society is handed over. |
-| `otp_codes` | user_id, code_hash, expires_at, attempts, invalidated | Codes are stored as SHA-256 hashes. |
-| `societies` | owner_id (unique), name (unique), description, category, contact fields | One society per president. |
-| `memberships` | society_id, student_id, status (`pending`, `approved`, `rejected`, `removed`) | Partial unique index allows one pending request per student and society. |
-| `events` | society_id, title, venue, start_at, end_at, registration_deadline, capacity, proposed_budget, approved_budget, status, remarks | Times are UTC ISO strings. `approved_budget` holds the last approved amount. |
-| `registrations` | event_id, student_id, status (`registered`, `cancelled`) | Unique per event and student. |
-| `invitations` | event_id, student_id, status (`invited`, `accepted`, `declined`) | Unique per event and student. |
-| `tasks` | event_id, title, priority, due_at, status (`todo`, `in_progress`, `completed`), assignee_id | Assignee is nullable. |
-| `expenses` | event_id, description, amount, spent_on, created_by | Amount must be greater than 0. |
+| `users` | name, email (unique), password_hash, role (`admin`, `president`, `student`) | |
+| `otp_codes` | user_id, code_hash, purpose (`login`/`reset`), expires_at, attempts, invalidated | Codes stored as SHA-256 hashes. |
+| `societies` | owner_id, name (unique), description, category, contact fields, logo_file, logo_mime | |
+| `memberships` | society_id, student_id, status, label (`member`/`core`) | Partial unique index: one pending request per student and society. |
+| `events` | society_id, title, venue, start_at, end_at, registration_deadline, capacity, proposed_budget, approved_budget, status, remarks | Times in UTC. |
+| `registrations` | event_id, student_id, status (`registered`/`cancelled`) | Unique per event and student. |
+| `invitations` | event_id, student_id, status (`invited`/`accepted`/`declined`/`withdrawn`) | Unique per event and student. |
+| `tasks` | **event_id or sub_event_id**, title, description, priority, due_at, status, assignee_id | Task 2: `event_id` optional, `sub_event_id` added, one of them required. |
+| `expenses` | **event_id or sub_event_id**, description, amount, category, vendor, spent_on, receipt_file/name/mime, created_by | Task 2: same association change as tasks. |
+| `meetings`, `meeting_invitations` | society_id, title, starts_at, location, agenda, status; meeting_id, student_id, response | |
+| `mega_events` (Task 2) | title, description, society_id, president_id, created_by, start_date, end_date, overall_budget | President set from the society owner at creation. |
+| `sub_events` (Task 2) | mega_event_id, title, description, venue, event_date, start_at, end_at, supervisor_id, allocated_budget, warned_80 | `allocated_budget` is set once; `warned_80` is the 80% alert flag. |
 | `notifications` | user_id, type, message, link, is_read | Delivered live over Socket.IO. |
 
-Schema and constraints are in `server/src/db.js`. Business rules are in `server/src/lib/domain.js`.
+### Database changes for Task 2
+Migrations run automatically on start-up and keep existing data:
+1. New tables `mega_events` and `sub_events`.
+2. `tasks` and `expenses` rebuilt so `event_id` is optional and `sub_event_id` is added, with a check that one of them is set. Task 1 summaries filter on `event_id`, so Task 1 and Task 2 figures stay separate.
+
+Schema and migrations: `server/src/db.js`. Business rules: `server/src/lib/domain.js`.
 
 ---
 
-## API overview
+## API
 
-All endpoints are under `/api`. Authenticated requests send `Authorization: Bearer <token>`.
+Interactive docs (Swagger UI): **http://localhost:4000/api/docs** · OpenAPI JSON: `/api/openapi.json` (77 operations).
 
-- **Auth:** `POST /auth/register`, `POST /auth/login` (sends OTP), `POST /auth/verify-otp`, `GET /auth/me`
-- **Societies:** `GET /societies`, `GET /societies/categories`, `GET|POST /societies/mine`, `GET|PUT /societies/:id`, membership requests and decisions under `/societies/:id/membership-requests` and `/societies/:id/memberships`
-- **Events:** `GET /events/public`, `GET /events/mine`, `POST /events`, `GET|PUT /events/:id`, `POST /events/:id/submit`, `POST /events/:id/cancel`, `POST|DELETE /events/:id/register`
-- **Volunteers and tasks:** `GET|POST /events/:id/invitations`, `POST /invitations/:id/respond`, `GET|POST /events/:id/tasks`, `PATCH /tasks/:id`
-- **Expenses:** `GET|POST /events/:id/expenses`, `PUT|DELETE /expenses/:id`
-- **Admin:** `GET /admin/dashboard`, `GET /admin/events`, `POST /admin/events/:id/decision`, `GET /admin/societies`
-- **Notifications:** `GET /notifications`, `POST /notifications/read-all`
+Main groups: Auth, Societies, Events, Registrations, Volunteers, Tasks, Expenses, Meetings, Mega Events (`/admin/mega-events`, `/mega-events`, `/sub-events`), Admin, Notifications. Authenticated requests send `Authorization: Bearer <token>`.
 
-Socket.IO events: `notification`, `data:changed` (refetch signal with no private data), `event:updated` (for pages that joined the event room).
+---
+
+## Design
+
+The interface follows a "campus bulletin" design system chosen with the ui-ux-pro-max skill: **Minimalism & Swiss Style** (grid, hairline rules, no gradients), the **University Department** palette (institutional navy `#1E3A5F`, ochre accent `#A16207` on warm paper), and **Newsreader** headings with **Public Sans** body text. Theme tokens live in `client/src/theme.css`.
 
 ---
 
 ## Project structure
 
 ```
-server/
-  src/
-    index.js        HTTP and Socket.IO server
-    app.js          Express app and routes
-    db.js           SQLite schema and transactions
-    seed.js         Demo data and administrator account
-    lib/            auth, domain rules, event serialization, realtime helpers
-    routes/         auth, societies, events (incl. tasks, expenses), admin, notifications
-client/
-  src/
-    App.jsx         Routes and role guards
-    pages/          Landing, Auth, PublicEvent, Societies, Student, President, ManageEvent, Admin
-    components/     Layout (nav and notification bell), shared UI, EventForm
-    hooks.js        Data fetching and live-update hooks
-    format.js       PKT date handling and formatting
+server/src/
+  index.js, app.js        HTTP + Socket.IO server, Express app and routes
+  db.js, seed.js          schema, migrations, demo data
+  openapi.js              API documentation
+  lib/                    auth, domain rules, events, mailer, rate limit, receipts, logos, PDF report, NEXUS seed
+  routes/                 auth, societies, events, meetings, megaEvents, admin, notifications
+client/src/
+  App.jsx                 routes and role guards
+  pages/                  Landing, Auth, ResetPassword, PublicEvent(s), Societies, Student, President,
+                          ManageEvent, MegaEvent, Admin
+  components/             Layout, UI kit, charts, icons, event form
+  index.css, dashboard.css, theme.css
 ```
 
 ---
 
-## Notes and limitations
+## Testing
 
-- OTP emails are sent through Gmail SMTP (`server/src/lib/mailer.js`). Setup:
-  1. Turn on 2-Step Verification for the Gmail account, then create an App Password at https://myaccount.google.com/apppasswords.
-  2. Copy `server/.env.example` to `server/.env` and set `SMTP_PASS` to the App Password. Do not commit `.env`.
-  3. Restart `npm run dev`. Codes now arrive by email.
-  
-  If `SMTP_PASS` is empty, codes are printed to the API console instead. If sending fails, the login step returns an error and no code is stored.
-- Session tokens are JWTs kept in `localStorage`, valid for 12 hours. Acceptable for an MVP, but use HTTP-only cookies for a production deployment.
-- `node:sqlite` is marked experimental in Node 22 and prints a warning on start-up. This is expected.
-- Amounts are shown in PKR. The brief does not name a currency, so this is an assumption.
-- No automated test suite is included. The main flows were checked with scripted API calls and a headless-browser run through the UI.
+There is no automated test suite in the repository. Workflows were verified with scripted API checks and headless-browser runs:
+- **Task 1 regression (31 checks, all passing):** validation, PKT/UTC, draft visibility, submit and approval, public listing, registration, duplicates, capacity, seat release, invitations, final responses, tasks and permissions, progress, budget cap, PDF report, edit-returns-to-pending, cancellation.
+- **Task 2 (31 checks, all passing):** admin validation and fixed fields, date range, time order, ownership, allocation limits and set-once rule, expense limits, 80% alert sent once, supervisor permissions and reassignment, student task list and supervised progress.
+- **Concurrency:** five simultaneous registrations for one seat, one success.
+- **Browser:** landing, public event, login, student, president, event management, Mega Event and admin pages load with no page errors and no horizontal overflow.
+
+## Notes and limitations
+- `node:sqlite` is marked experimental in Node 22 and prints a warning on start-up.
+- The auth rate limit is in memory and resets on restart.
+- Session tokens are JWTs in `localStorage` (12 hours); use HTTP-only cookies for production.
+- Uploaded receipts and logos are stored in `server/uploads/` (git-ignored).
+- Amounts are shown in PKR.

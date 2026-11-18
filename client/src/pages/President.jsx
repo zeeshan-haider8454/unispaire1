@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useDataChanged } from '../hooks.js';
 import { formatPKT, money, toPktInput } from '../format.js';
-import { Alert, CopyLinkButton, CopyTextButton, DashHero, EmptyState, Loading, Panel, ScheduleBadge, StatCard, StatusBadge, useActions } from '../components/ui.jsx';
+import { BarList, CHART_COLORS, Donut } from '../components/Charts.jsx';
+import { Alert, CopyLinkButton, CopyTextButton, DashHero, SocietyLogo, EmptyState, Loading, Panel, ProgressBar, ScheduleBadge, StatCard, StatusBadge, useActions } from '../components/ui.jsx';
 import EventForm from '../components/EventForm.jsx';
 
 const EMPTY_SOCIETY = { name: '', description: '', category: '', contact_email: '', contact_phone: '' };
@@ -41,6 +42,76 @@ function SocietyForm({ initial, categories, onSubmit, busy, submitLabel, onCance
         {onCancel && <button className="btn" type="button" onClick={onCancel}>Cancel</button>}
       </div>
     </form>
+  );
+}
+
+// Mega Events assigned to this president by the administrator (Task 2).
+function MegaEventsPanel() {
+  const mega = useApi('/mega-events/mine');
+  useDataChanged(mega.reload);
+  return (
+    <Panel title="Mega Events" count={mega.data?.length ?? 0}>
+      <Alert>{mega.error}</Alert>
+      {mega.data?.length === 0 && (
+        <EmptyState icon="layers" title="No Mega Events assigned">When the university assigns a Mega Event to your society, it appears here.</EmptyState>
+      )}
+      <div className="list">
+        {mega.data?.map((m) => (
+          <div key={m.id} className="item-card">
+            <div>
+              <h3>{m.title}</h3>
+              <p className="muted small">
+                {m.start_date} to {m.end_date} · {m.sub_event_count} sub-event{m.sub_event_count === 1 ? '' : 's'} · Budget {money(m.overall_budget)} · Spent {money(m.spent)}
+              </p>
+              <ProgressBar value={m.progress} />
+            </div>
+            <Link className="btn btn-primary btn-small" to={`/president/mega/${m.id}`}>Open</Link>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+// Society logo: preview plus upload (JPG, PNG or WebP, up to 2 MB).
+function LogoPanel({ society, onUploaded, act }) {
+  const [file, setFile] = useState(null);
+  const [version, setVersion] = useState(0);
+  const [inputKey, setInputKey] = useState(0);
+
+  async function upload(e) {
+    e.preventDefault();
+    if (!file) return;
+    const form = new FormData();
+    form.append('logo', file);
+    const result = await act.run(() => api(`/societies/${society.id}/logo`, { method: 'POST', body: form }), 'Logo updated.');
+    if (result !== undefined) {
+      setFile(null);
+      setInputKey((k) => k + 1);
+      setVersion((v) => v + 1);
+      onUploaded();
+    }
+  }
+
+  return (
+    <Panel title="Society logo">
+      <form className="logo-row" onSubmit={upload}>
+        <SocietyLogo societyId={society.id} name={society.name} hasLogo={society.has_logo} size={72} version={version} />
+        <div className="stack grow">
+          <input
+            key={inputKey}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            aria-label="Choose a logo image"
+          />
+          <p className="muted small" style={{ margin: 0 }}>JPG, PNG or WebP, up to 2 MB. Shown to members on the society page.</p>
+          <div className="row">
+            <button className="btn btn-primary" type="submit" disabled={!file || act.busy}>Upload logo</button>
+          </div>
+        </div>
+      </form>
+    </Panel>
   );
 }
 
@@ -218,6 +289,36 @@ export default function PresidentDashboard() {
 
       <Alert>{act.error}</Alert>
       <Alert kind="success">{act.message}</Alert>
+
+      <section className="dash-grid">
+        <Panel title="Events by schedule">
+          <Donut
+            centerValue={events.data?.length ?? 0}
+            centerLabel="Events"
+            segments={[
+              { label: 'Upcoming', value: (events.data ?? []).filter((e) => e.schedule_status === 'upcoming').length, color: CHART_COLORS.teal },
+              { label: 'Ongoing', value: (events.data ?? []).filter((e) => e.schedule_status === 'ongoing').length, color: CHART_COLORS.navy },
+              { label: 'Completed', value: (events.data ?? []).filter((e) => e.schedule_status === 'completed').length, color: CHART_COLORS.violet },
+            ]}
+          />
+        </Panel>
+        <Panel title="Registrations by event">
+          <BarList
+            empty="Create an approved event to see registrations here."
+            rows={(events.data ?? []).filter((e) => e.status === 'approved').slice(0, 8).map((e) => ({
+              label: e.title,
+              value: e.registered_count ?? 0,
+              max: e.capacity,
+              color: CHART_COLORS.tealLight,
+              display: `${e.registered_count ?? 0} of ${e.capacity}`,
+            }))}
+          />
+        </Panel>
+      </section>
+
+      <MegaEventsPanel />
+
+      <LogoPanel society={s} onUploaded={reloadAll} act={act} />
 
       <Panel title="Share your events" className="share-panel">
         <p className="muted small panel-note">

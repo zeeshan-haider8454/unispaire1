@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useDataChanged } from '../hooks.js';
 import { formatPKT, labelize, TASK_STATUS_LABELS } from '../format.js';
-import { Alert, DashHero, EmptyState, Loading, Panel, StatCard, StatusBadge, useActions } from '../components/ui.jsx';
+import { Alert, DashHero, EmptyState, Loading, Panel, ProgressBar, StatCard, StatusBadge, useActions } from '../components/ui.jsx';
 import { useAuth } from '../auth.jsx';
+import { BarList, CHART_COLORS, Donut } from '../components/Charts.jsx';
 
 export default function StudentDashboard() {
   const { user } = useAuth();
@@ -13,6 +14,7 @@ export default function StudentDashboard() {
   const tasks = useApi('/tasks/mine');
   const memberships = useApi('/societies/memberships/mine');
   const meetings = useApi('/meetings/mine');
+  const supervised = useApi('/sub-events/supervised');
   const act = useActions();
 
   // Refetch everything when the server reports a change for this student.
@@ -22,7 +24,8 @@ export default function StudentDashboard() {
     tasks.reload();
     memberships.reload();
     meetings.reload();
-  }, [invitations.reload, registrations.reload, tasks.reload, memberships.reload, meetings.reload]);
+    supervised.reload();
+  }, [invitations.reload, registrations.reload, tasks.reload, memberships.reload, meetings.reload, supervised.reload]);
   useDataChanged(reloadAll);
 
   async function respond(id, accept) {
@@ -63,6 +66,9 @@ export default function StudentDashboard() {
 
   const isUpcoming = (r) => Date.parse(r.start_at) > Date.now() && r.event_status !== 'cancelled';
 
+  const taskTotal = tasks.data?.length ?? 0;
+  const taskDone = tasks.data?.filter((t) => t.status === 'completed').length ?? 0;
+  const taskProgress = taskTotal ? Math.round((taskDone / taskTotal) * 100) : 0;
   const pendingInvites = invitations.data?.filter((i) => i.status === 'invited').length ?? 0;
   const openTasks = tasks.data?.filter((t) => t.status !== 'completed').length ?? 0;
   const upcomingRegs = registrations.data?.filter((r) => r.status === 'registered' && isUpcoming(r)).length ?? 0;
@@ -86,6 +92,70 @@ export default function StudentDashboard() {
 
       <Alert>{act.error}</Alert>
       <Alert kind="success">{act.message}</Alert>
+
+      <Panel title="My Supervised Sub-events" count={supervised.data?.length ?? 0}>
+        <Alert>{supervised.error}</Alert>
+        {supervised.data?.length === 0 && (
+          <EmptyState icon="shield" title="You are not supervising any sub-events">When the president assigns you as a supervisor, the sub-event and its checklist appear here.</EmptyState>
+        )}
+        <div className="stack">
+          {supervised.data?.map((s) => (
+            <div key={s.id} className="sub-supervised">
+              <div className="sub-head">
+                <div>
+                  <p className="eyebrow">{s.mega_title}</p>
+                  <h3>{s.title}</h3>
+                  <p className="muted small">{formatPKT(s.start_at).replace(' PKT', '')}–{formatPKT(s.end_at).split(', ')[1]} · {s.venue}</p>
+                </div>
+                <div className="sub-progress">
+                  <strong>{s.progress}%</strong>
+                  <span className="muted small">{s.task_done} of {s.task_total} tasks completed</span>
+                </div>
+              </div>
+              <ProgressBar value={s.progress} />
+              {s.tasks.length === 0 && <p className="muted small">No checklist items yet.</p>}
+              <ul className="checklist">
+                {s.tasks.map((t) => (
+                  <li key={t.id} className={`check-item status-${t.status}`}>
+                    <div className="check-main">
+                      <strong>{t.title}</strong>
+                      <span className="muted small">{t.assignee_name ? `Assigned to ${t.assignee_name}` : 'Unassigned'}{t.due_at ? ` · Due ${formatPKT(t.due_at)}` : ''}</span>
+                    </div>
+                    <select value={t.status} disabled={act.busy} onChange={(e) => setTaskStatus(t.id, e.target.value)} aria-label={`Status of ${t.title}`}>
+                      {Object.entries(TASK_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </Panel>
+
+      <section className="dash-grid">
+        <Panel title="My task progress">
+          <Donut
+            centerValue={`${taskProgress}%`}
+            centerLabel="Completed"
+            segments={[
+              { label: 'To Do', value: (tasks.data ?? []).filter((t) => t.status === 'todo').length, color: CHART_COLORS.slate },
+              { label: 'In Progress', value: (tasks.data ?? []).filter((t) => t.status === 'in_progress').length, color: CHART_COLORS.amber },
+              { label: 'Completed', value: (tasks.data ?? []).filter((t) => t.status === 'completed').length, color: CHART_COLORS.teal },
+            ]}
+          />
+        </Panel>
+        <Panel title="My registrations">
+          <Donut
+            centerValue={registrations.data?.length ?? 0}
+            centerLabel="Registrations"
+            segments={[
+              { label: 'Upcoming', value: (registrations.data ?? []).filter((r) => r.status === 'registered' && isUpcoming(r)).length, color: CHART_COLORS.teal },
+              { label: 'Past', value: (registrations.data ?? []).filter((r) => r.status === 'registered' && !isUpcoming(r)).length, color: CHART_COLORS.slate },
+              { label: 'Cancelled', value: (registrations.data ?? []).filter((r) => r.status === 'cancelled').length, color: CHART_COLORS.coral },
+            ]}
+          />
+        </Panel>
+      </section>
 
       <div className="dash-grid">
         <Panel title="Volunteer invitations" count={invitations.data?.length ?? 0}>

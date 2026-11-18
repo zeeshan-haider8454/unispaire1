@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { tokenStore } from '../api.js';
 import { Link } from 'react-router-dom';
 import { formatPKT, labelize, SCHEDULE_LABELS, STATUS_LABELS } from '../format.js';
 import Icon from './Icon.jsx';
@@ -81,12 +82,52 @@ export function ScheduleBadge({ value }) {
   return <span className={`badge badge-${value}`}>{SCHEDULE_LABELS[value] ?? labelize(value)}</span>;
 }
 
+// The percentage sits beside the bar so the fill never hides it.
 export function ProgressBar({ value }) {
+  const pct = Math.max(0, Math.min(100, Number(value) || 0));
   return (
-    <div className="progress" aria-label={`${value}% complete`}>
-      <div className="progress-fill" style={{ width: `${value}%` }} />
-      <span>{value}%</span>
+    <div className="progress-row" role="img" aria-label={`${pct}% complete`}>
+      <div className="progress">
+        <div className="progress-fill" style={{ width: `${pct}%` }} />
+      </div>
+      <span className="progress-label">{pct}%</span>
     </div>
+  );
+}
+
+// Society logo. Loads the image with the login token; shows initials when the society has no logo.
+export function SocietyLogo({ societyId, name = '', hasLogo, size = 56, version = 0 }) {
+  const [src, setSrc] = useState(null);
+  useEffect(() => {
+    if (!hasLogo) {
+      setSrc(null);
+      return undefined;
+    }
+    let url = null;
+    let cancelled = false;
+    const token = tokenStore.get();
+    fetch(`/api/societies/${societyId}/logo?v=${version}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then((res) => (res.ok ? res.blob() : null))
+      .then((blob) => {
+        if (cancelled || !blob) return;
+        url = URL.createObjectURL(blob);
+        setSrc(url);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [societyId, hasLogo, version]);
+
+  const initials = name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase() || 'U';
+  if (src) {
+    return <img className="society-logo" src={src} alt={`${name} logo`} style={{ width: size, height: size }} />;
+  }
+  return (
+    <span className="society-logo fallback" style={{ width: size, height: size, fontSize: size * 0.36 }} aria-label={`${name} default logo`}>
+      {initials}
+    </span>
   );
 }
 
@@ -135,14 +176,11 @@ export function EventCard({ ev }) {
       <ScheduleBadge value={ev.schedule_status} />
       <h3>{ev.title}</h3>
       <p className="muted">{ev.society_name}</p>
-      <dl>
-        <dt>Starts</dt>
-        <dd>{formatPKT(ev.start_at)}</dd>
-        <dt>Venue</dt>
-        <dd>{ev.venue}</dd>
-        <dt>Seats left</dt>
-        <dd>{ev.seats_remaining} of {ev.capacity}</dd>
-      </dl>
+      <ul className="event-meta">
+        <li><Icon name="clock" size={15} /><span>{formatPKT(ev.start_at)}</span></li>
+        <li><Icon name="pin" size={15} /><span>{ev.venue}</span></li>
+        <li><Icon name="users" size={15} /><span>{ev.seats_remaining} of {ev.capacity} seats left</span></li>
+      </ul>
     </Link>
   );
 }

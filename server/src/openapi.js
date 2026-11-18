@@ -205,6 +205,109 @@ add('/admin/societies', op('get', 'All societies with member and event counts (a
 add('/notifications', op('get', 'My latest notifications and unread count', { tag: 'Notifications' }));
 add('/notifications/read-all', op('post', 'Mark all my notifications as read', { tag: 'Notifications' }));
 
+add('/notifications/{id}/read', op('post', 'Mark one of my notifications as read', { tag: 'Notifications', params: [id('id', 'Notification ID')] }));
+
+// ---- Additions: bonus features
+add('/invitations/{id}/withdraw', op('post', 'Accepted volunteer withdraws. Unfinished tasks are unassigned; In Progress resets to To Do', { tag: 'Volunteers', params: [id('id', 'Invitation ID')] }));
+add('/tasks/{id}',
+  op('patch', 'Update a task. President edits any field; assignee (and, for sub-event tasks, the supervisor) changes status only', {
+    tag: 'Tasks', params: [id('id', 'Task ID')],
+    requestBody: body({
+      title: str('Title'), description: str('Description'), priority: { type: 'string', enum: ['low', 'medium', 'high', 'urgent'] },
+      due_at: str(PKT), assignee_id: { type: 'integer', nullable: true }, status: { type: 'string', enum: ['todo', 'in_progress', 'completed'] },
+    }),
+  }),
+  op('delete', 'Delete a task (president who owns the event or Mega Event)', { tag: 'Tasks', params: [id('id', 'Task ID')] }));
+add('/events/{id}/expense-report.pdf', op('get', 'Download the event expense report as PDF (president or admin)', {
+  tag: 'Expenses', params: [id()],
+  responses: { 200: { description: 'PDF file', content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } } } }, 403: ERR, 404: ERR },
+}));
+add('/expenses/{id}/receipt', op('get', 'Open an expense receipt (president or admin)', {
+  tag: 'Expenses', params: [id('id', 'Expense ID')],
+  responses: { 200: { description: 'Image or PDF file' }, 403: ERR, 404: ERR },
+}));
+add('/societies/{id}/logo',
+  op('get', 'Society logo image (login required)', { tag: 'Societies', params: [id()], responses: { 200: { description: 'Image file' }, 404: ERR } }),
+  op('post', 'Upload or replace the society logo (owner; JPG, PNG or WebP up to 2 MB, multipart field "logo")', {
+    tag: 'Societies', params: [id()],
+    requestBody: { required: true, content: { 'multipart/form-data': { schema: { type: 'object', properties: { logo: { type: 'string', format: 'binary' } } } } } },
+  }));
+
+// ---- Meetings
+add('/societies/{id}/meetings',
+  op('get', 'Meetings of a society (owner or admin)', { tag: 'Meetings', params: [id()] }),
+  op('post', 'Schedule a meeting and invite approved members (owner)', {
+    tag: 'Meetings', params: [id()],
+    requestBody: body({ title: str('Title'), starts_at: str(PKT), location: str('Location'), agenda: str('Agenda'), description: str('Description'), student_ids: { type: 'array', items: { type: 'integer' } } }, ['title', 'starts_at']),
+    responses: { 201: json('Created'), 400: ERR, 403: ERR },
+  }));
+add('/meetings/{id}', op('patch', 'Edit a scheduled meeting; invitees are notified of changes (owner)', {
+  tag: 'Meetings', params: [id()],
+  requestBody: body({ title: str('Title'), starts_at: str(PKT), location: str('Location'), agenda: str('Agenda'), description: str('Description') }),
+}));
+add('/meetings/{id}/cancel', op('post', 'Cancel a meeting; invitees are notified (owner)', { tag: 'Meetings', params: [id()] }));
+add('/meetings/{id}/invitees', op('post', 'Invite more approved members (owner)', {
+  tag: 'Meetings', params: [id()], requestBody: body({ student_ids: { type: 'array', items: { type: 'integer' } } }, ['student_ids']),
+}));
+add('/meetings/mine', op('get', 'Meetings I am invited to (student)', { tag: 'Meetings' }));
+add('/meetings/invitations/{id}/respond', op('post', 'Accept or decline a meeting invitation (student)', {
+  tag: 'Meetings', params: [id('id', 'Meeting invitation ID')], requestBody: body({ accept: { type: 'boolean' } }, ['accept']),
+}));
+
+// ---- Task 2: Mega Events
+add('/admin/mega-events',
+  op('get', 'Mega Events created by me, with budget and task summaries (admin)', { tag: 'Mega Events' }),
+  op('post', 'Create a Mega Event for a society; its president is assigned automatically (admin)', {
+    tag: 'Mega Events',
+    requestBody: body({
+      title: str('Title'), description: str('Description'), society_id: int('Society ID'),
+      start_date: str('YYYY-MM-DD (PKT)'), end_date: str('YYYY-MM-DD (PKT), on or after start'), overall_budget: num('Overall budget in PKR, at least 0'),
+    }, ['title', 'society_id', 'start_date', 'end_date', 'overall_budget']),
+    responses: { 201: json('Created'), 400: ERR, 403: ERR },
+  }));
+add('/admin/mega-events/societies', op('get', 'Societies and their presidents for the create form (admin)', { tag: 'Mega Events' }));
+add('/admin/mega-events/{id}', op('patch', 'Change title or description only; society, president, dates and budget are fixed (admin who created it)', {
+  tag: 'Mega Events', params: [id()], requestBody: body({ title: str('Title'), description: str('Description') }),
+}));
+add('/mega-events/mine', op('get', 'Mega Events assigned to me (president)', { tag: 'Mega Events' }));
+add('/mega-events/{id}', op('get', 'Mega Event with summary and sub-events (assigned president)', { tag: 'Mega Events', params: [id()] }));
+add('/mega-events/{id}/sub-events', op('post', 'Create a sub-event: date within the Mega Event range, start before end, optional supervisor and allocation (president)', {
+  tag: 'Mega Events', params: [id()],
+  requestBody: body({
+    title: str('Title'), description: str('Description'), venue: str('Venue'),
+    event_date: str('YYYY-MM-DD (PKT)'), start_time: str('HH:mm (PKT)'), end_time: str('HH:mm (PKT)'),
+    supervisor_id: { type: 'integer', nullable: true, description: 'Existing Student / Volunteer' },
+    allocated_budget: { type: 'number', nullable: true, description: 'Set once; all allocations must fit the overall budget' },
+  }, ['title', 'description', 'venue', 'event_date', 'start_time', 'end_time']),
+  responses: { 201: json('Created'), 400: ERR, 403: ERR },
+}));
+add('/sub-events/supervised', op('get', 'Sub-events I supervise, with completion percentage and checklist (student)', { tag: 'Mega Events' }));
+add('/sub-events/{id}',
+  op('get', 'Sub-event detail. President sees budget and expenses; the supervisor sees tasks only', { tag: 'Mega Events', params: [id()] }),
+  op('patch', 'Edit sub-event details or change its supervisor (president). The previous supervisor loses access immediately', {
+    tag: 'Mega Events', params: [id()],
+    requestBody: body({
+      title: str('Title'), description: str('Description'), venue: str('Venue'),
+      event_date: str('YYYY-MM-DD (PKT)'), start_time: str('HH:mm (PKT)'), end_time: str('HH:mm (PKT)'),
+      supervisor_id: { type: 'integer', nullable: true },
+    }),
+  }));
+add('/sub-events/{id}/allocation', op('post', 'Set the sub-event budget allocation once (president)', {
+  tag: 'Mega Events', params: [id()], requestBody: body({ amount: num('PKR, at least 0') }, ['amount']),
+  responses: { 200: json('Allocation set'), 400: ERR, 403: ERR, 409: ERR },
+}));
+add('/sub-events/{id}/expenses', op('post', 'Record a sub-event expense within its allocation; notifies the president once at 80% (president)', {
+  tag: 'Mega Events', params: [id()],
+  requestBody: body({ description: str('Description'), amount: num('PKR, greater than 0'), category: str('Category'), vendor: str('Vendor'), spent_on: str('YYYY-MM-DD') }, ['description', 'amount']),
+  responses: { 201: json('Recorded'), 400: ERR, 403: ERR, 409: ERR },
+}));
+add('/sub-events/{id}/tasks', op('post', 'Create a checklist task; may be assigned to any registered student (president)', {
+  tag: 'Mega Events', params: [id()],
+  requestBody: body({ title: str('Title'), description: str('Description'), priority: { type: 'string', enum: ['low', 'medium', 'high', 'urgent'] }, due_at: str(PKT), assignee_id: { type: 'integer', nullable: true } }, ['title']),
+  responses: { 201: json('Created'), 400: ERR, 403: ERR },
+}));
+add('/students/directory', op('get', 'Registered students for supervisor and assignee pickers (president)', { tag: 'Mega Events' }));
+
 export const openApiSpec = {
   openapi: '3.0.3',
   info: {
@@ -215,7 +318,8 @@ export const openApiSpec = {
   servers: [{ url: '/api' }],
   tags: [
     { name: 'Health' }, { name: 'Auth' }, { name: 'Societies' }, { name: 'Events' }, { name: 'Registrations' },
-    { name: 'Volunteers' }, { name: 'Tasks' }, { name: 'Expenses' }, { name: 'Admin' }, { name: 'Notifications' },
+    { name: 'Volunteers' }, { name: 'Tasks' }, { name: 'Expenses' }, { name: 'Meetings' }, { name: 'Mega Events' },
+    { name: 'Admin' }, { name: 'Notifications' },
   ],
   paths,
   components: {

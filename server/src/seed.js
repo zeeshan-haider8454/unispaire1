@@ -2,6 +2,7 @@
 // Usage: npm run seed
 import bcrypt from 'bcryptjs';
 import { db } from './db.js';
+import { ensureNexusStarter, ensureNexusDemoMegaEvent, NEXUS_PRESIDENT_EMAIL } from './lib/nexusSeed.js';
 
 const DEMO_PASSWORD = process.env.DEMO_PASSWORD || 'Demo@12345';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@unisphere.edu';
@@ -11,7 +12,10 @@ const hours = (h) => new Date(Date.now() + h * 3600_000).toISOString();
 const days = (d) => hours(d * 24);
 
 // Clear in dependency order (foreign keys are enforced).
-for (const table of ['notifications', 'expenses', 'tasks', 'invitations', 'registrations', 'events', 'memberships', 'societies', 'otp_codes', 'users']) {
+for (const table of [
+  'notifications', 'expenses', 'tasks', 'sub_events', 'mega_events', 'meeting_invitations', 'meetings',
+  'invitations', 'registrations', 'events', 'memberships', 'societies', 'otp_codes', 'users',
+]) {
   db.exec(`DELETE FROM ${table}`);
 }
 
@@ -19,7 +23,7 @@ const hash = bcrypt.hashSync(DEMO_PASSWORD, 10);
 const adminHash = bcrypt.hashSync(ADMIN_PASSWORD, 10);
 const insertUser = db.prepare('INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)');
 
-insertUser.run('UniSphere Administrator', ADMIN_EMAIL, adminHash, 'admin');
+const adminId = Number(insertUser.run('UniSphere Administrator', ADMIN_EMAIL, adminHash, 'admin').lastInsertRowid);
 const president = insertUser.run('Ayesha Khan', 'president@unisphere.edu', hash, 'president').lastInsertRowid;
 const ali = insertUser.run('Ali Raza', 'ali@unisphere.edu', hash, 'student').lastInsertRowid;
 const sara = insertUser.run('Sara Ahmed', 'sara@unisphere.edu', hash, 'student').lastInsertRowid;
@@ -84,6 +88,11 @@ const insertExpense = db.prepare('INSERT INTO expenses (event_id, description, a
 insertExpense.run(hackathon, 'Venue hire', 15000, now.slice(0, 10), president, now, now);
 insertExpense.run(hackathon, 'Snacks and drinks', 12500, now.slice(0, 10), president, now, now);
 
+// Task 2 starter data: the NEXUS society, its president, three students, and a demo Mega Event
+// (NEXUS Tech Fest 2026) with two sub-events, supervisors, checklist tasks and allocations.
+ensureNexusStarter({ password: DEMO_PASSWORD });
+ensureNexusDemoMegaEvent(adminId);
+
 console.log('Demo data loaded.\n');
 console.log('Accounts (password for demo users is DEMO_PASSWORD):');
 console.log(`  Administrator : ${ADMIN_EMAIL}  /  ${ADMIN_PASSWORD}`);
@@ -91,3 +100,4 @@ console.log(`  President     : president@unisphere.edu  /  ${DEMO_PASSWORD}`);
 console.log(`  Student       : ali@unisphere.edu  /  ${DEMO_PASSWORD}`);
 console.log(`  Student       : sara@unisphere.edu  /  ${DEMO_PASSWORD}`);
 console.log(`  Student       : bilal@unisphere.edu  /  ${DEMO_PASSWORD}`);
+console.log(`  NEXUS president (Task 2): ${NEXUS_PRESIDENT_EMAIL}  /  ${DEMO_PASSWORD}`);

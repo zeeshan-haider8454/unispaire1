@@ -12,6 +12,7 @@ import { Societies, SocietyDetail } from './pages/Societies.jsx';
 import StudentDashboard from './pages/Student.jsx';
 import PresidentDashboard from './pages/President.jsx';
 import ManageEvent from './pages/ManageEvent.jsx';
+import MegaEventPage from './pages/MegaEvent.jsx';
 import AdminDashboard from './pages/Admin.jsx';
 
 // Requires login, and optionally one of the given roles.
@@ -39,6 +40,7 @@ export default function App() {
         <Route path="student" element={<Guard roles={['student']}><StudentDashboard /></Guard>} />
         <Route path="president" element={<Guard roles={['president']}><PresidentDashboard /></Guard>} />
         <Route path="president/events/:id" element={<Guard roles={['president']}><ManageEvent /></Guard>} />
+        <Route path="president/mega/:id" element={<Guard roles={['president']}><MegaEventPage /></Guard>} />
         <Route path="admin" element={<Guard roles={['admin']}><AdminDashboard /></Guard>} />
         <Route path="*" element={<div className="card"><h2>Page not found</h2></div>} />
       </Route>

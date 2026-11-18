@@ -2,9 +2,96 @@ import { useCallback, useState } from 'react';
 import { api } from '../api.js';
 import { useApi, useDataChanged } from '../hooks.js';
 import { formatPKT, money, STATUS_LABELS } from '../format.js';
-import { Alert, DashHero, EmptyState, Loading, Panel, ProgressBar, ScheduleBadge, StatCard, StatusBadge, useActions } from '../components/ui.jsx';
+import { Alert, DashHero, EmptyState, Loading, Panel, ProgressBar, ScheduleBadge, StatCard, StatusBadge, useActions } from '../components/ui.jsx';import { BarList, CHART_COLORS, Donut } from '../components/Charts.jsx';
 
 const EVENT_FILTERS = ['', 'pending', 'approved', 'rejected', 'draft', 'cancelled'];
+
+// Task 2: Mega Events the administrator created. The administrator sets the overall budget and dates once,
+// and can change only the title and description afterwards. Sub-events belong to the society's president.
+function MegaEventsAdminPanel() {
+  const megas = useApi('/admin/mega-events');
+  const societies = useApi('/admin/mega-events/societies');
+  const act = useActions();
+  const EMPTY = { title: '', description: '', society_id: '', start_date: '', end_date: '', overall_budget: '' };
+  const [form, setForm] = useState(EMPTY);
+  const [editing, setEditing] = useState(null);
+  const reloadAll = useCallback(() => megas.reload(), [megas.reload]);
+  useDataChanged(reloadAll);
+
+  async function create(e) {
+    e.preventDefault();
+    const body = { ...form, society_id: Number(form.society_id), overall_budget: Number(form.overall_budget) };
+    const result = await act.run(() => api('/admin/mega-events', { method: 'POST', body }), 'Mega Event created and assigned to the society president.');
+    if (result !== undefined) {
+      setForm(EMPTY);
+      reloadAll();
+    }
+  }
+
+  async function saveEdit(e) {
+    e.preventDefault();
+    const result = await act.run(() => api(`/admin/mega-events/${editing.id}`, { method: 'PATCH', body: { title: editing.title, description: editing.description } }), 'Mega Event updated.');
+    if (result !== undefined) {
+      setEditing(null);
+      reloadAll();
+    }
+  }
+
+  return (
+    <Panel title="Mega Events" count={megas.data?.length ?? 0}>
+      <p className="muted small panel-note">
+        Create a Mega Event for a society. Its president is assigned automatically. Dates and the overall budget cannot be changed later.
+      </p>
+      <Alert>{act.error}</Alert>
+      <Alert kind="success">{act.message}</Alert>
+      <form className="inset form-grid" onSubmit={create}>
+        <label>Title<input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>
+        <label>Society
+          <select required value={form.society_id} onChange={(e) => setForm({ ...form, society_id: e.target.value })}>
+            <option value="">Choose a society</option>
+            {(societies.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.name} (president: {s.president_name})</option>)}
+          </select>
+        </label>
+        <label className="span-2">Description<textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
+        <label>Start date<input type="date" required value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} /></label>
+        <label>End date<input type="date" required value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} /></label>
+        <label>Overall budget (PKR)<input type="number" min="0" step="0.01" required value={form.overall_budget} onChange={(e) => setForm({ ...form, overall_budget: e.target.value })} /></label>
+        <div className="form-actions" style={{ alignSelf: 'end' }}>
+          <button className="btn btn-primary" type="submit" disabled={act.busy}>Create Mega Event</button>
+        </div>
+      </form>
+
+      {megas.data?.length === 0 && <EmptyState icon="layers" title="No Mega Events yet">Create one above to coordinate a multi-activity fest.</EmptyState>}
+      <div className="list">
+        {megas.data?.map((m) => (
+          <div key={m.id} className="item-card">
+            {editing?.id === m.id ? (
+              <form className="stack grow" onSubmit={saveEdit}>
+                <input required value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} aria-label="Mega Event title" />
+                <textarea rows={2} value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} aria-label="Mega Event description" />
+                <div className="row">
+                  <button className="btn btn-primary btn-small" type="submit" disabled={act.busy}>Save</button>
+                  <button className="btn btn-small" type="button" onClick={() => setEditing(null)}>Cancel</button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <div>
+                  <h3>{m.title}</h3>
+                  <p className="muted small">{m.society_name} · President {m.president_name} · {m.start_date} to {m.end_date}</p>
+                  <p className="small">
+                    Budget {money(m.overall_budget)} · Allocated {money(m.allocated)} · Spent {money(m.spent)} · Sub-events {m.sub_event_count} · Tasks {m.task_done}/{m.task_total} done
+                  </p>
+                </div>
+                <button className="btn btn-small" onClick={() => setEditing({ id: m.id, title: m.title, description: m.description })}>Edit title</button>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'Administrator' },
   { value: 'president', label: 'President' },
@@ -17,6 +104,8 @@ export default function AdminDashboard() {
   const monitor = useApi(`/admin/events${filter ? `?status=${filter}` : ''}`);
   const societies = useApi('/admin/societies');
   const users = useApi('/admin/users');
+  // Unfiltered event list for the charts, so the status filter above does not change them.
+  const allEvents = useApi('/admin/events');
   const [roleFilter, setRoleFilter] = useState('');
   const [editingUser, setEditingUser] = useState(null);
   const act = useActions();
@@ -28,7 +117,8 @@ export default function AdminDashboard() {
     monitor.reload();
     societies.reload();
     users.reload();
-  }, [dash.reload, monitor.reload, societies.reload, users.reload]);
+    allEvents.reload();
+  }, [dash.reload, monitor.reload, societies.reload, users.reload, allEvents.reload]);
   useDataChanged(reloadAll);
 
   async function decide(ev, decision) {
@@ -59,6 +149,7 @@ export default function AdminDashboard() {
   }
 
   const stats = dash.data?.stats;
+  const countStatus = (status) => (allEvents.data ?? []).filter((e) => e.status === status).length;
 
   return (
     <>
@@ -82,6 +173,40 @@ export default function AdminDashboard() {
           <StatCard icon="activity" label="Live approved events" value={stats.approved} hint="Upcoming or ongoing" tone="emerald" />
         </section>
       )}
+
+      <section className="dash-grid">
+        <Panel title="Events by approval status">
+          <Donut
+            centerValue={allEvents.data?.length ?? 0}
+            centerLabel="Events"
+            segments={[
+              { label: 'Approved', value: countStatus('approved'), color: CHART_COLORS.teal },
+              { label: 'Pending', value: countStatus('pending'), color: CHART_COLORS.amber },
+              { label: 'Draft', value: countStatus('draft'), color: CHART_COLORS.slate },
+              { label: 'Rejected', value: countStatus('rejected'), color: CHART_COLORS.coral },
+              { label: 'Cancelled', value: countStatus('cancelled'), color: CHART_COLORS.navy },
+            ]}
+          />
+        </Panel>
+        <Panel title="Budget use by approved event">
+          <BarList
+            empty="No approved budgets yet."
+            rows={(allEvents.data ?? [])
+              .filter((e) => e.approved_budget !== null && e.approved_budget !== undefined)
+              .slice(0, 8)
+              .map((e) => ({
+                label: e.title,
+                value: e.spent ?? 0,
+                max: e.approved_budget,
+                color: (e.spent ?? 0) > e.approved_budget ? CHART_COLORS.coral : CHART_COLORS.teal,
+                display: `${money(e.spent)} of ${money(e.approved_budget)}`,
+                sub: (e.budget_remaining ?? 0) < 0 ? 'Over budget: spending is above the approved budget' : undefined,
+              }))}
+          />
+        </Panel>
+      </section>
+
+      <MegaEventsAdminPanel />
 
       <Panel title="Event proposals awaiting decision" count={dash.data?.pending.length ?? 0}>
         <p className="muted small panel-note">
